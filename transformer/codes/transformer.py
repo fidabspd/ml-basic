@@ -6,11 +6,6 @@ from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model
 
 
-def scaled_dot_product_attention(query, key, value):
-    matmul_qk = tf.matmul(query, key, transpose_b=True)
-
-
-
 class MultiHeadAttentionLayer(Layer):
     
     def __init__(self, hidden_dim, n_heads, dropout_ratio, dtype=tf.float32):

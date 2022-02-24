@@ -107,10 +107,41 @@ class EncoderLayer(Layer):
         return ff_outputs
 
 
+class DecoderLayer(Layer):
+
+    def __init__(self, hidden_dim, n_heads, pf_dim, dropout_ratio, epsilon=1e-5, dtype=tf.float32):
+        super(DecoderLayer, self).__init__()
+        
+        self.self_attention = MultiHeadAttentionLayer(hidden_dim, n_heads, dropout_ratio, dtype)
+        self.self_attn_norm = LayerNormalization(epsilon=epsilon)
+        self.encd_attention = MultiHeadAttentionLayer(hidden_dim, n_heads, dropout_ratio, dtype)
+        self.encd_attn_norm = LayerNormalization(epsilon=epsilon)
+        self.pos_feedforward = PositionwiseFeedforwardLayer(pf_dim, hidden_dim, dropout_ratio)
+        self.pos_ff_norm = LayerNormalization(epsilon=epsilon)
+
+        self.dropout = Dropout(dropout_ratio)
+
+    def call(self, target, encd, target_mask, encd_mask):
+        self_attn_outputs, _ = self.self_attention(target, target, target, target_mask)
+        self_attn_outputs = self.dropout(self_attn_outputs)
+        self_attn_outputs = self.self_attn_norm(target+self_attn_outputs)
+
+        encd_attn_outputs, attention = self.encd_attention(target, encd, encd, encd_mask)  # 마스크가 왜 인코더일까
+        encd_attn_outputs = self.dropout(encd_attn_outputs)
+        encd_attn_outputs = self.encd_attn_norm(self_attn_outputs+encd_attn_outputs)
+
+        outputs = self.pos_feedforward(encd_attn_outputs)
+        outputs = self.dropout(outputs)
+        outputs = self.pos_ff_norm(outputs)
+
+        return outputs, attention
+
+
 class EncoderStack(Layer):
 
     def __init__(self, input_dim, hidden_dim, n_layers, n_heads,
                  pf_dim, dropout_ratio, max_seq_len=100, dtype=tf.float32):
+        # input_dim = len(vocab)
         super(EncoderStack, self).__init__()
         self.scale = tf.sqrt(tf.cast(hidden_dim, dtype))
 
@@ -137,3 +168,40 @@ class EncoderStack(Layer):
             outputs = layer(outputs, mask)
 
         return outputs
+
+
+class DecoderStack(Layer):
+    
+    def __init__(self, output_dim, hidden_dim, n_layers, n_heads,
+                 pf_dim, dropout_ratio, max_seq_len=100, dtype=tf.float32):
+        super(DecoderStack, self).__init__()
+        self.scale = tf.sqrt(tf.cast(hidden_dim, dtype))
+
+        self.tok_emb = Embedding(output_dim, hidden_dim)
+        self.pos_emb = Embedding(max_seq_len, hidden_dim)
+
+        self.decd_stk = [
+            DecoderLayer(hidden_dim, n_heads, pf_dim, dropout_ratio, dtype=dtype)
+            for _ in range(n_layers)
+        ]
+
+        self.fc_out = Dense(output_dim)
+
+        self.dropout = Dropout(dropout_ratio)
+
+    def call(self, target, encd, target_mask, encd_mask):
+        batch_size = tf.shape(target)[0]
+        seq_len = tf.shape(target)[1]
+
+        pos = tf.tile(tf.expand_dims(tf.range(seq_len), axis=0), (batch_size, 1))
+
+        emb = self.tok_emb(target) * self.scale + self.pos_emb(pos)
+        outputs = self.dropout(emb)
+
+        for layer in self.decd_stk:
+            outputs, attention = layer(target, encd, target_mask, encd_mask)
+
+        outputs = self.fc_out(outputs)
+
+        return outputs, attention
+        

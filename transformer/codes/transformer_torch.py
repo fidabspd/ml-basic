@@ -26,7 +26,7 @@ class MultiHeadAttentionLayer(nn.Module):
     def split_heads(self, inputs, batch_size):
         inputs = inputs.view(batch_size, -1, self.n_heads, self.head_dim)
         # [batch_size, seq_len, n_heads, head_dim]
-        inputs = inputs.permute(0, 2, 1, 3)
+        splits = inputs.permute(0, 2, 1, 3)
         return splits  # [batch_size, n_heads, seq_len, head_dim] -> n_heads를 앞으로
 
     def scaled_dot_product_attention(self, query, key, value, mask):
@@ -139,6 +139,7 @@ class Encoder(nn.Module):
                  dropout_ratio, device, max_seq_len=100):
         # input_dim = len(vocab)
         super().__init__()
+        self.device = device
         self.scale = torch.sqrt(torch.FloatTensor([hidden_dim])).to(device)
 
         self.tok_emb = nn.Embedding(input_dim, hidden_dim)
@@ -171,6 +172,7 @@ class Decoder(nn.Module):
     def __init__(self, output_dim, hidden_dim, n_layers, n_heads, pf_dim,
                  dropout_ratio, device, max_seq_len=100):
         super().__init__()
+        self.device = device
         self.scale = torch.sqrt(torch.FloatTensor([hidden_dim])).to(device)
 
         self.tok_emb = nn.Embedding(output_dim, hidden_dim)

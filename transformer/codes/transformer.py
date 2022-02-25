@@ -1,15 +1,12 @@
-import numpy as np
-import pandas as pd
-
 import tensorflow as tf
 from tensorflow.keras.layers import *
-from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.models import Model
 
 
 class MultiHeadAttentionLayer(Layer):
     
-    def __init__(self, hidden_dim, n_heads, dropout_ratio, dtype=tf.float32):
-        super(MultiHeadAttentionLayer, self).__init__()
+    def __init__(self, hidden_dim, n_heads, dropout_ratio, dtype=tf.float32, **kwargs):
+        super(MultiHeadAttentionLayer, self).__init__(**kwargs)
 
         assert hidden_dim % n_heads == 0, f'hidden_dim must be multiple of n_heads.'
         
@@ -66,8 +63,8 @@ class MultiHeadAttentionLayer(Layer):
 
 class PositionwiseFeedforwardLayer(Layer):
 
-    def __init__(self, pf_dim, hidden_dim, dropout_ratio):
-        super(PositionwiseFeedforwardLayer, self).__init__()
+    def __init__(self, pf_dim, hidden_dim, dropout_ratio, **kwargs):
+        super(PositionwiseFeedforwardLayer, self).__init__(**kwargs)
         self.fc_0 = Dense(pf_dim, activation='relu')
         self.fc_1 = Dense(hidden_dim)
         self.dropout = Dropout(dropout_ratio)
@@ -81,8 +78,8 @@ class PositionwiseFeedforwardLayer(Layer):
 
 class EncoderLayer(Layer):
 
-    def __init__(self, hidden_dim, n_heads, pf_dim, dropout_ratio, epsilon=1e-5, dtype=tf.float32):
-        super(EncoderLayer, self).__init__()
+    def __init__(self, hidden_dim, n_heads, pf_dim, dropout_ratio, epsilon=1e-5, dtype=tf.float32, **kwargs):
+        super(EncoderLayer, self).__init__(**kwargs)
 
         self.hidden_dim = hidden_dim
         self.n_heads = n_heads
@@ -109,8 +106,8 @@ class EncoderLayer(Layer):
 
 class DecoderLayer(Layer):
 
-    def __init__(self, hidden_dim, n_heads, pf_dim, dropout_ratio, epsilon=1e-5, dtype=tf.float32):
-        super(DecoderLayer, self).__init__()
+    def __init__(self, hidden_dim, n_heads, pf_dim, dropout_ratio, epsilon=1e-5, dtype=tf.float32, **kwargs):
+        super(DecoderLayer, self).__init__(**kwargs)
         
         self.self_attention = MultiHeadAttentionLayer(hidden_dim, n_heads, dropout_ratio, dtype)
         self.self_attn_norm = LayerNormalization(epsilon=epsilon)
@@ -126,7 +123,7 @@ class DecoderLayer(Layer):
         self_attn_outputs = self.dropout(self_attn_outputs)
         self_attn_outputs = self.self_attn_norm(target+self_attn_outputs)
 
-        encd_attn_outputs, attention = self.encd_attention(target, encd, encd, encd_mask)  # 마스크가 왜 인코더일까
+        encd_attn_outputs, attention = self.encd_attention(target, encd, encd, encd_mask)
         encd_attn_outputs = self.dropout(encd_attn_outputs)
         encd_attn_outputs = self.encd_attn_norm(self_attn_outputs+encd_attn_outputs)
 
@@ -137,12 +134,12 @@ class DecoderLayer(Layer):
         return outputs, attention
 
 
-class EncoderStack(Layer):
+class Encoder(Model):
 
-    def __init__(self, input_dim, hidden_dim, n_layers, n_heads,
-                 pf_dim, dropout_ratio, max_seq_len=100, dtype=tf.float32):
+    def __init__(self, input_dim, hidden_dim, n_layers, n_heads, pf_dim,
+                 dropout_ratio, max_seq_len=100, dtype=tf.float32, **kwargs):
         # input_dim = len(vocab)
-        super(EncoderStack, self).__init__()
+        super(Encoder, self).__init__(**kwargs)
         self.scale = tf.sqrt(tf.cast(hidden_dim, dtype))
 
         self.tok_emb = Embedding(input_dim, hidden_dim)
@@ -170,11 +167,11 @@ class EncoderStack(Layer):
         return outputs
 
 
-class DecoderStack(Layer):
+class Decoder(Model):
     
-    def __init__(self, output_dim, hidden_dim, n_layers, n_heads,
-                 pf_dim, dropout_ratio, max_seq_len=100, dtype=tf.float32):
-        super(DecoderStack, self).__init__()
+    def __init__(self, output_dim, hidden_dim, n_layers, n_heads, pf_dim,
+                 dropout_ratio, max_seq_len=100, dtype=tf.float32, **kwargs):
+        super(Decoder, self).__init__(**kwargs)
         self.scale = tf.sqrt(tf.cast(hidden_dim, dtype))
 
         self.tok_emb = Embedding(output_dim, hidden_dim)

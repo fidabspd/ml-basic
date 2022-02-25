@@ -183,7 +183,7 @@ class Decoder(nn.Module):
             for _ in range(n_layers)
         ])
 
-        self.fc_out = nn.Linear(output_dim)
+        self.fc_out = nn.Linear(hidden_dim, output_dim)
 
         self.dropout = nn.Dropout(dropout_ratio)
 
@@ -197,9 +197,42 @@ class Decoder(nn.Module):
         outputs = self.dropout(emb)
 
         for layer in self.decd_stk:
-            outputs, attention = layer(target, encd, target_mask, encd_mask)
+            outputs, attention = layer(outputs, encd, target_mask, encd_mask)
 
         outputs = self.fc_out(outputs)
 
         return outputs, attention
         
+
+class Transformer(nn.Module):
+    def __init__(self, input_dim, output_dim, n_layers, hidden_dim, n_heads, pf_dim,
+                 in_seq_len, out_seq_len, pad_idx, dropout_ratio, device):
+        super().__init__()
+        self.device = device
+
+        self.encoder = Encoder(
+            input_dim, hidden_dim, n_layers, n_heads, pf_dim,
+            dropout_ratio, device, in_seq_len
+        )
+        self.decoder = Decoder(
+            output_dim, hidden_dim, n_layers, n_heads, pf_dim,
+            dropout_ratio, device, out_seq_len
+        )
+        self.pad_idx = pad_idx
+
+    def create_padding_mask(self, inputs, for_target=False):
+        mask = (inputs != self.pad_idx).unsqueeze(1).unsqueeze(2)
+        if for_target:
+            target_len = inputs.shape[1]
+            target_sub_mask = torch.tril(torch.ones((target_len, target_len), device = self.device)).bool()
+            mask = mask & target_sub_mask
+        return mask
+
+    def forward(self, inp, tar):
+        inp_mask = self.create_padding_mask(inp)
+        tar_mask = self.create_padding_mask(tar, True)
+
+        enc_inp = self.encoder(inp, inp_mask)
+        output, attention = self.decoder(tar, enc_inp, tar_mask, inp_mask)
+
+        return output, attention

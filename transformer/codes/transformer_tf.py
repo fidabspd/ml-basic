@@ -40,6 +40,7 @@ class MultiHeadAttentionLayer(Layer):
         x = tf.matmul(self.dropout(attention), value)
         return x, attention  # attention 시각화에 쓸 수 있음
 
+    @tf.function
     def call(self, query, key, value, mask=None):
 
         batch_size = tf.shape(query)[0]
@@ -69,6 +70,7 @@ class PositionwiseFeedforwardLayer(Layer):
         self.fc_1 = Dense(hidden_dim)
         self.dropout = Dropout(dropout_ratio)
 
+    @tf.function
     def call(self, inputs):
         x = self.fc_0(inputs)
         x = self.dropout(x)
@@ -92,6 +94,7 @@ class EncoderLayer(Layer):
 
         self.dropout = Dropout(dropout_ratio)
 
+    @tf.function
     def call(self, inputs, mask=None):
         attn_outputs, _ = self.self_attention(inputs, inputs, inputs, mask)
         attn_outputs = self.dropout(attn_outputs)
@@ -118,6 +121,7 @@ class DecoderLayer(Layer):
 
         self.dropout = Dropout(dropout_ratio)
 
+    @tf.function
     def call(self, target, encd, target_mask, encd_mask):
         self_attn_outputs, _ = self.self_attention(target, target, target, target_mask)
         self_attn_outputs = self.dropout(self_attn_outputs)
@@ -152,6 +156,7 @@ class Encoder(Model):
 
         self.dropout = Dropout(dropout_ratio)
 
+    @tf.function
     def call(self, x, mask=None):
         batch_size = tf.shape(x)[0]
         seq_len = tf.shape(x)[1]
@@ -186,6 +191,7 @@ class Decoder(Model):
 
         self.dropout = Dropout(dropout_ratio)
 
+    @tf.function
     def call(self, target, encd, target_mask, encd_mask):
         batch_size = tf.shape(target)[0]
         seq_len = tf.shape(target)[1]

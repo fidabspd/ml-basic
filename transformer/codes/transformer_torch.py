@@ -257,12 +257,12 @@ def train_one_epoch(model, dl, optimizer, criterion, clip, device):
 
         optimizer.zero_grad()
 
-        outputs, _ = model(inp, tar)
+        outputs, _ = model(inp, tar[:,:-1])
 
         output_dim = outputs.shape[-1]
 
         outputs = outputs.contiguous().view(-1, output_dim)
-        tar = tar.contiguous().view(-1)
+        tar = tar[:,1:].contiguous().view(-1)
 
         loss = criterion(outputs, tar)
         loss.backward()
@@ -283,12 +283,12 @@ def evaluate(model, dl, criterion, device):
     with torch.no_grad():
         for inp, tar in dl:
             inp, tar = inp.to(device), tar.to(device)
-            outputs, _ = model(inp, tar)
+            outputs, _ = model(inp, tar[:,:-1])
 
             output_dim = outputs.shape[-1]
 
             outputs = outputs.contiguous().view(-1, output_dim)
-            tar = tar.contiguous().view(-1)
+            tar = tar[:,1:].contiguous().view(-1)
             loss = criterion(outputs, tar)
 
             epoch_loss += loss.item()
@@ -312,23 +312,29 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl,
         start_time = time.time()
         
         train_loss = train_one_epoch(model, train_dl, optimizer, criterion, clip, device)
-        valid_loss = evaluate(model, valid_dl, criterion, device)
+        if valid_dl is not None:
+            valid_loss = evaluate(model, valid_dl, criterion, device)
 
         end_time = time.time()
         epoch_mins, epoch_secs = epoch_time(start_time, end_time)
 
-        if valid_loss < best_valid_loss:
-            best_epoch = epoch
-            print('Best!')
-            best_valid_loss = valid_loss
-            torch.save(model.state_dict(), model_path+'chat_bot.pt')
+        if valid_dl is not None:
+            if valid_loss < best_valid_loss:
+                best_epoch = epoch
+                print('Best!')
+                best_valid_loss = valid_loss
+                torch.save(model.state_dict(), model_path+'chat_bot.pt')
 
         print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
         print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):.3f}')
-        print(f'\tValidation Loss: {valid_loss:.3f} | Validation PPL: {math.exp(valid_loss):.3f}')
+        if valid_dl is not None:
+            print(f'\tValidation Loss: {valid_loss:.3f} | Validation PPL: {math.exp(valid_loss):.3f}')
 
-        if epoch-best_epoch >= es_patience:
-            print(f'Best Epoch: {best_epoch + 1:02}')
-            print(f'\tBest Train Loss: {train_loss:.3f} | Best Train PPL: {math.exp(train_loss):.3f}')
-            print(f'\tBest Validation Loss: {valid_loss:.3f} | Best Validation PPL: {math.exp(valid_loss):.3f}')
-            break
+            if epoch-best_epoch >= es_patience:
+                print(f'Best Epoch: {best_epoch + 1:02}')
+                print(f'\tBest Train Loss: {train_loss:.3f} | Best Train PPL: {math.exp(train_loss):.3f}')
+                print(f'\tBest Validation Loss: {valid_loss:.3f} | Best Validation PPL: {math.exp(valid_loss):.3f}')
+                break
+    
+    if valid_dl is None:
+        torch.save(model.state_dict(), model_path+'chat_bot.pt')

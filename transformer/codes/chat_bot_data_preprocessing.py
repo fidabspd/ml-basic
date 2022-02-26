@@ -14,6 +14,9 @@ def add_space(sentence):
 def to_tokens(sentence, tokenizer, to_ids=True):
     if to_ids:
         tokens = tokenizer.encode(sentence).ids
+        vocab_size = tokenizer.get_vocab_size()
+        start_token, end_token = vocab_size, vocab_size+1
+        tokens = [start_token]+tokens+[end_token]
     else:
         tokens = tokenizer.encode(sentence).tokens
     return tokens
@@ -21,9 +24,7 @@ def to_tokens(sentence, tokenizer, to_ids=True):
 
 def pad_seq(seq, tokenizer, max_seq_len):
     pad_token = tokenizer.encode('[PAD]').ids[0]
-    vocab_size = tokenizer.get_vocab_size()
-    start_token, end_token = vocab_size, vocab_size+1
-    padded_seq = [start_token]+seq+[end_token]+[pad_token]*(max_seq_len-len(seq)-2)
+    padded_seq = seq+[pad_token]*(max_seq_len-len(seq))
     return padded_seq
 
 

@@ -156,9 +156,8 @@ def main(args):
         optimizer, criterion, CLIP, device, MODEL_PATH, MODEL_NAME
     )
 
-    transformer = torch.load(MODEL_PATH+MODEL_NAME+'.pt')
-
     if VALIDATE:
+        transformer = torch.load(MODEL_PATH+MODEL_NAME+'.pt')
         valid_loss = evaluate(transformer, valid_dl, criterion, device)
         print(f'Valid Loss: {valid_loss:.3f} | Valid PPL: {math.exp(valid_loss):.3f}')
 

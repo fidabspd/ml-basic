@@ -207,6 +207,16 @@ class Decoder(nn.Module):
         
 
 class Transformer(nn.Module):
+
+    @staticmethod
+    def create_padding_mask(inputs, device, pad_idx=0, for_target=False):
+        mask = (inputs != pad_idx).unsqueeze(1).unsqueeze(2)
+        if for_target:
+            target_len = inputs.shape[1]
+            target_sub_mask = torch.tril(torch.ones((target_len, target_len), device = device)).bool()
+            mask = mask & target_sub_mask
+        return mask
+
     def __init__(self, input_dim, output_dim, n_layers, hidden_dim, n_heads, pf_dim,
                  in_seq_len, out_seq_len, pad_idx, dropout_ratio, device):
         super().__init__()
@@ -222,17 +232,9 @@ class Transformer(nn.Module):
         )
         self.pad_idx = pad_idx
 
-    def create_padding_mask(self, inputs, for_target=False):
-        mask = (inputs != self.pad_idx).unsqueeze(1).unsqueeze(2)
-        if for_target:
-            target_len = inputs.shape[1]
-            target_sub_mask = torch.tril(torch.ones((target_len, target_len), device = self.device)).bool()
-            mask = mask & target_sub_mask
-        return mask
-
     def forward(self, inp, tar):
-        inp_mask = self.create_padding_mask(inp)
-        tar_mask = self.create_padding_mask(tar, True)
+        inp_mask = self.create_padding_mask(inp, self.device, self.pad_idx)
+        tar_mask = self.create_padding_mask(tar, self.device, self.pad_idx, True)
 
         enc_inp = self.encoder(inp, inp_mask)
         output, attention = self.decoder(tar, enc_inp, tar_mask, inp_mask)
@@ -337,4 +339,4 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl,
                 break
     
     if valid_dl is None:
-        torch.save(model.state_dict(), model_path+model_name+'.pt')
+        torch.save(model, model_path+model_name+'.pt')

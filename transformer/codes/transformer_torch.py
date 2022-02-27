@@ -304,7 +304,7 @@ def epoch_time(start_time, end_time):
 
 
 def train(model, n_epochs, es_patience, train_dl, valid_dl,
-          optimizer, criterion, clip, device, model_path):
+          optimizer, criterion, clip, device, model_path, model_name='chatbot'):
     best_valid_loss = float('inf')
     best_epoch = 0
 
@@ -323,7 +323,7 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl,
                 best_epoch = epoch
                 print('Best!')
                 best_valid_loss = valid_loss
-                torch.save(model.state_dict(), model_path+'chat_bot.pt')
+                torch.save(model, model_path+model_name+'.pt')
 
         print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
         print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):.3f}')
@@ -337,4 +337,4 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl,
                 break
     
     if valid_dl is None:
-        torch.save(model.state_dict(), model_path+'chat_bot.pt')
+        torch.save(model.state_dict(), model_path+model_name+'.pt')

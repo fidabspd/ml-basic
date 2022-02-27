@@ -25,16 +25,14 @@ def parse_args():
 
 def qna(question, transformer, tokenizer, ans_seq_len, device):
 
-    # encoder.eval()
-    # decoder.eval()
+    transformer.eval()
 
-    pad_idx = tokenizer.encode('[PAD]').ids[0]
     vocab_size = tokenizer.get_vocab_size()
     start_token, end_token = vocab_size, vocab_size+1
     
     question_tokens = to_tokens(question, tokenizer)
     question_tokens = torch.LongTensor(question_tokens).unsqueeze(0).to(device)
-    question_mask = Transformer.create_padding_mask(question_tokens, device, pad_idx)
+    question_mask = transformer.create_padding_mask(question_tokens)
     with torch.no_grad():
         question_encd = transformer.encoder(question_tokens, question_mask)
 
@@ -43,7 +41,7 @@ def qna(question, transformer, tokenizer, ans_seq_len, device):
     for _ in range(ans_seq_len):
         target_tokens = torch.LongTensor(output_tokens).unsqueeze(0).to(device)
 
-        target_mask = Transformer.create_padding_mask(target_tokens, device, pad_idx, True)
+        target_mask = transformer.create_padding_mask(target_tokens, True)
         with torch.no_grad():
             output, attention = transformer.decoder(target_tokens, question_encd, target_mask, question_mask)
 

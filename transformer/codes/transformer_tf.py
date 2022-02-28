@@ -208,3 +208,9 @@ class Decoder(Model):
 
         return outputs, attention
         
+
+class Transformer(Model):
+    
+    def __init__(self):
+        raise NotImplementedError
+        

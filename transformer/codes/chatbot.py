@@ -5,7 +5,6 @@ import pickle
 import torch
 
 from chatbot_data_preprocessing import *
-from transformer_torch import *
 
 
 def parse_args():
@@ -23,9 +22,11 @@ def parse_args():
     return parser.parse_args()
 
 
-def qna(question, transformer, tokenizer, ans_seq_len, device):
+def qna(question, transformer, tokenizer, device):
 
     transformer.eval()
+
+    ans_seq_len = transformer.out_seq_len
 
     vocab_size = tokenizer.get_vocab_size()
     start_token, end_token = vocab_size, vocab_size+1
@@ -58,7 +59,6 @@ def qna(question, transformer, tokenizer, ans_seq_len, device):
 
 def main(args):
 
-    ANS_SEQ_LEN = args.ans_seq_len
     STOP_SIGN = args.stop_sign
     MODEL_PATH = args.model_path
     MODEL_NAME = args.model_name
@@ -78,7 +78,7 @@ def main(args):
         question = input('You: ')
         if question == STOP_SIGN:
             break
-        answer, _ = qna(question, transformer, tokenizer, ANS_SEQ_LEN, device)
+        answer, _ = qna(question, transformer, tokenizer, device)
         print(f'ChatBot: {answer}')
 
 

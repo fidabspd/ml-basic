@@ -1,12 +1,9 @@
 import re
-
 import numpy as np
-
-from torch.utils.data import Dataset
 
 
 def add_space(sentence):
-    sentence = re.sub(r"([?.!,])", r" \1 ", sentence)  # 기호 띄어쓰기
+    sentence = re.sub(r"([?.!,])", r" \1 ", sentence)
     sentence = sentence.strip()
     return sentence
 
@@ -42,17 +39,3 @@ def preprocess_sentences(sentences, tokenizer, max_seq_len):
         sentences
     ))
     return np.array(prep)
-
-
-class ChatBotDataset(Dataset):
-    def __init__(self, questions, answers):
-        assert len(questions) == len(answers)
-        self.questions = questions
-        self.answers = answers
-        
-    def __len__(self):
-        return len(self.questions)
-    
-    def __getitem__(self, idx):
-        question, answer = self.questions[idx], self.answers[idx]
-        return question, answer

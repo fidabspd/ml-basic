@@ -1,14 +1,13 @@
 import os
+import time
 import math
-
 import argparse
-
 import pickle
 
 from tokenizers import BertWordPieceTokenizer
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from chatbot_data_preprocessing import *
@@ -57,6 +56,106 @@ def create_tensorboard_graph(model, inputs, path):
         print('Saved model graph')
     else:
         print('graph already exists')
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def initialize_weights(m):
+    if hasattr(m, 'weight') and m.weight.dim() > 1:
+        nn.init.xavier_uniform_(m.weight.data)
+
+
+def train_one_epoch(model, dl, optimizer, criterion, clip, device):
+    model.train()
+    epoch_loss = 0
+    for inp, tar in dl:
+        inp, tar = inp.to(device), tar.to(device)
+
+        optimizer.zero_grad()
+
+        outputs, _ = model(inp, tar[:,:-1])
+
+        output_dim = outputs.shape[-1]
+
+        outputs = outputs.contiguous().view(-1, output_dim)
+        tar = tar[:,1:].contiguous().view(-1)
+
+        loss = criterion(outputs, tar)
+        loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
+
+        optimizer.step()
+
+        epoch_loss += loss.item()
+
+    return epoch_loss / len(dl)
+
+
+def evaluate(model, dl, criterion, device):
+    model.eval()
+    epoch_loss = 0
+
+    with torch.no_grad():
+        for inp, tar in dl:
+            inp, tar = inp.to(device), tar.to(device)
+            outputs, _ = model(inp, tar[:,:-1])
+
+            output_dim = outputs.shape[-1]
+
+            outputs = outputs.contiguous().view(-1, output_dim)
+            tar = tar[:,1:].contiguous().view(-1)
+            loss = criterion(outputs, tar)
+
+            epoch_loss += loss.item()
+
+    return epoch_loss / len(dl)
+
+
+def epoch_time(start_time, end_time):
+    elapsed_time = end_time - start_time
+    elapsed_mins = int(elapsed_time / 60)
+    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
+    return elapsed_mins, elapsed_secs
+
+
+def train(model, n_epochs, es_patience, train_dl, valid_dl,
+          optimizer, criterion, clip, device, model_path, model_name='chatbot'):
+    best_valid_loss = float('inf')
+    best_epoch = 0
+
+    for epoch in range(n_epochs):
+        start_time = time.time()
+        
+        train_loss = train_one_epoch(model, train_dl, optimizer, criterion, clip, device)
+        if valid_dl is not None:
+            valid_loss = evaluate(model, valid_dl, criterion, device)
+
+        end_time = time.time()
+        epoch_mins, epoch_secs = epoch_time(start_time, end_time)
+
+        if valid_dl is not None:
+            if valid_loss < best_valid_loss:
+                best_epoch = epoch
+                print('Best!')
+                best_valid_loss = valid_loss
+                torch.save(model, model_path+model_name+'.pt')
+
+        print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
+        print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):.3f}')
+        if valid_dl is not None:
+            print(f'\tValidation Loss: {valid_loss:.3f} | Validation PPL: {math.exp(valid_loss):.3f}')
+
+            if epoch-best_epoch >= es_patience:
+                print(f'Best Epoch: {best_epoch + 1:02}')
+                print(f'\tBest Train Loss: {train_loss:.3f} | Best Train PPL: {math.exp(train_loss):.3f}')
+                print(f'\tBest Validation Loss: {valid_loss:.3f} | Best Validation PPL: {math.exp(valid_loss):.3f}')
+                break
+    
+    if valid_dl is None:
+        torch.save(model, model_path+model_name+'.pt')
 
 
 def main(args):
@@ -121,6 +220,19 @@ def main(args):
     questions_prep = preprocess_sentences(questions, tokenizer, QUE_MAX_SEQ_LEN)
     answers_prep = preprocess_sentences(answers, tokenizer, ANS_MAX_SEQ_LEN)
 
+    class ChatBotDataset(Dataset):
+        def __init__(self, questions, answers):
+            assert len(questions) == len(answers)
+            self.questions = questions
+            self.answers = answers
+            
+        def __len__(self):
+            return len(self.questions)
+        
+        def __getitem__(self, idx):
+            question, answer = self.questions[idx], self.answers[idx]
+            return question, answer
+
     if VALIDATE:
         train_q, valid_q = questions_prep[:-3000], questions_prep[-3000:]
         train_a, valid_a = answers_prep[:-3000], answers_prep[-3000:]
@@ -146,6 +258,7 @@ def main(args):
     inp, tar = inp.to(device), tar.to(device)
     create_tensorboard_graph(transformer, (inp, tar), GRAPH_LOG_PATH)
 
+    # Train model
     optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
     criterion = torch.nn.CrossEntropyLoss(ignore_index=PAD_IDX)
 

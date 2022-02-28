@@ -19,7 +19,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=desc)
 
     parser.add_argument('--data_path', type=str, default='../data/')
-    parser.add_argument('--file_name', type=str, default='ChatBotData.txt', help='**.txt')
+    parser.add_argument('--file_name', type=str, default='ChatBotData')
     parser.add_argument('--graph_log_path', type=str, default='../logs/graph/')
     parser.add_argument('--tokenizer_path', type=str, default='../model/')
     parser.add_argument('--tokenizer_name', type=str, default='tokenizer')
@@ -77,11 +77,19 @@ def train_one_epoch(model, dl, optimizer, criterion, clip, device):
         optimizer.zero_grad()
 
         outputs, _ = model(inp, tar[:,:-1])
+        # decoder의 input 마지막 padding 제거, len 1 줄임.
+        # 이유는 transformer의 최종 output의 shape이 [batch_size, query_len(tar), hidden_dim]이기 때문인데,
+        # 우리가 예측해야하는 문장에는 <sos> 토큰이 없어야한다.
+        # (예측 seq생성 과정에서 [<sos>]를 첫번째 `tar`로 넣어주고 for문을 돌릴 것이기 때문.)
+        # 따라서 정답으로 쓰일 `tar`의 seq_len은 <sos> 토큰을 제외한 `len(tar)-1`이기 때문에 shape을 맞춰야 loss가 계산 가능하다.
+        # 번역기로 예를들어 쉽게 말하자면
+        # inp: [<sos>, hi, <eos>, <pad>, <pad>], tar: [<sos>, 안녕, <eos>, <pad>, <pad>, <pad>]을 이용해
+        # [안녕, <eos>, <pad>, <pad>, <pad>, <pad>]의 예측값을 만들어내야한다.
 
         output_dim = outputs.shape[-1]
 
         outputs = outputs.contiguous().view(-1, output_dim)
-        tar = tar[:,1:].contiguous().view(-1)
+        tar = tar[:,1:].contiguous().view(-1)  # loss 계산할 정답으로 쓰일 `tar`는 <sos> 토큰 제거
 
         loss = criterion(outputs, tar)
         loss.backward()
@@ -199,7 +207,7 @@ def main(args):
     # Load data
     questions = []
     answers = []
-    f = open(DATA_PATH+FILE_NAME, 'r')
+    f = open(DATA_PATH+FILE_NAME+'.txt', 'r')
     while True:
         line = f.readline()
         if not line:
@@ -212,7 +220,7 @@ def main(args):
     # Train tokenizer
     tokenizer = BertWordPieceTokenizer(strip_accents=False, lowercase=False)
     tokenizer.train(
-        files = DATA_PATH + FILE_NAME,
+        files = DATA_PATH+FILE_NAME+'.txt',
         vocab_size = 32000,
         min_frequency = 3,
         limit_alphabet = 6000

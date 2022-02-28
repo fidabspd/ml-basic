@@ -32,12 +32,19 @@ class MultiHeadAttentionLayer(nn.Module):
     def scaled_dot_product_attention(self, query, key, value, mask):
         key_t = key.permute(0, 1, 3, 2)
         energy = torch.matmul(query, key_t) / self.scale  # [batch_size, n_heads, query_len, key_len]
+        # mask shape:
+        # for inp self_attention: [batch_size, 1, 1, key_len(inp)]
+        # for tar self_attention: [batch_size, 1, query_len(tar)(=key_len(tar)), key_len(tar)(=query_len(tar))]
+        # for encd_attention: [batch_size, 1, 1, key_len(inp)]
         if mask is not None:
             energy = energy.masked_fill(mask==0, -1e10)  # key에 masking
+            # `masked_fill`의 parameter로 받는 `mask==0`에 대해. 
+            # - `energy`와 shape의 차원의 개수가 달라도 괜찮다. `energy`와 `mask==0`의 차원 개수중 더 많은 차원의 개수를 가지도록 자동으로 맞춘다.
+            # - 각 차원의 len은 `energy`의 각 차원 len과 일치하거나 1이어야한다. (배수는 안된다.)
         attention = torch.softmax(energy, axis=-1)  # axis=-1 은 key의 문장 위치
         attention = self.dropout(attention)
-        # attention shape: [batch_size, n_heads, query_len, key_len(=val_len)]
-        # value shape: [batch_size, n_heads, val_len(=key_len), head_dim]
+        # attention shape: [batch_size, n_heads, query_len, key_len(=value_len)]
+        # value shape: [batch_size, n_heads, value_len(=key_len), head_dim]
         x = torch.matmul(attention, value)  # [batch_size, n_heads, query_len, head_dim]
         return x, attention  # attention 시각화에 쓸 수 있음
 
@@ -229,11 +236,11 @@ class Transformer(nn.Module):
         )
         self.pad_idx = pad_idx
 
-    def create_padding_mask(self, inputs, for_target=False):
-        mask = (inputs != self.pad_idx).unsqueeze(1).unsqueeze(2)
+    def create_padding_mask(self, key, for_target=False):
+        mask = (key != self.pad_idx).unsqueeze(1).unsqueeze(2)
         if for_target:
-            target_len = inputs.shape[1]
-            target_sub_mask = torch.tril(torch.ones((target_len, target_len), device = self.device)).bool()
+            key_len = key.shape[1]
+            target_sub_mask = torch.tril(torch.ones((key_len, key_len), device = self.device)).bool()
             mask = mask & target_sub_mask
         return mask  # [batch_size, 1, 1, key_len]
 
@@ -244,5 +251,6 @@ class Transformer(nn.Module):
         enc_inp = self.encoder(inp, inp_mask)
         output, attention = self.decoder(tar, enc_inp, tar_mask, inp_mask)
         # output shape: [batch_size, query_len(tar), decoder vocab_size]
+        # attention_shape: [batch_size, n_heads, query_len(tar), key_len(inp)]
 
         return output, attention

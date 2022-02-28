@@ -1,9 +1,7 @@
 import argparse
-
 import pickle
-
+import matplotlib.pyplot as plt
 import torch
-
 from chatbot_data_preprocessing import *
 
 
@@ -22,39 +20,75 @@ def parse_args():
     return parser.parse_args()
 
 
-def qna(question, transformer, tokenizer, device):
+class Chatbot():
 
-    transformer.eval()
+    def __init__(self, transformer, tokenizer, device):
+        self.transformer = transformer.to(device)
+        self.transformer.eval()
+        self.tokenizer = tokenizer
+        self.device = device
+        self.call_qna = False
 
-    ans_seq_len = transformer.out_seq_len
+    def qna(self, question):
 
-    vocab_size = tokenizer.get_vocab_size()
-    start_token, end_token = vocab_size, vocab_size+1
-    
-    question_tokens = to_tokens(question, tokenizer)
-    question_tokens = torch.LongTensor(question_tokens).unsqueeze(0).to(device)
-    question_mask = transformer.create_padding_mask(question_tokens)
-    with torch.no_grad():
-        question_encd = transformer.encoder(question_tokens, question_mask)
+        ans_seq_len = self.transformer.out_seq_len
 
-    output_tokens = [start_token]
-
-    for _ in range(ans_seq_len):
-        target_tokens = torch.LongTensor(output_tokens).unsqueeze(0).to(device)
-
-        target_mask = transformer.create_padding_mask(target_tokens, True)
+        vocab_size = self.tokenizer.get_vocab_size()
+        start_token, end_token = vocab_size, vocab_size+1
+        
+        question_tokens = to_tokens(question, self.tokenizer)
+        question_tokens = torch.LongTensor(question_tokens).unsqueeze(0).to(self.device)
+        question_mask = self.transformer.create_padding_mask(question_tokens)
         with torch.no_grad():
-            output, attention = transformer.decoder(target_tokens, question_encd, target_mask, question_mask)
+            question_encd = self.transformer.encoder(question_tokens, question_mask)
 
-        pred_token = output.argmax(2)[:,-1].item()
-        output_tokens.append(pred_token)
+        output_tokens = [start_token]
 
-        if pred_token == end_token:
-            break
-            
-    output_sentence = tokenizer.decode(output_tokens)
-    
-    return output_sentence, attention
+        for _ in range(ans_seq_len):
+            target_tokens = torch.LongTensor(output_tokens).unsqueeze(0).to(self.device)
+
+            target_mask = self.transformer.create_padding_mask(target_tokens, True)
+            with torch.no_grad():
+                output, attention = self.transformer.decoder(target_tokens, question_encd, target_mask, question_mask)
+
+            pred_token = output.argmax(2)[:,-1].item()
+            output_tokens.append(pred_token)
+
+            if pred_token == end_token:
+                break
+                
+        answer = self.tokenizer.decode(output_tokens)
+        
+        self.question = question
+        self.answer = answer
+        self.attention = attention
+        self.call_qna = True
+        
+        return answer, attention
+
+    def plot_attention_weights(self, draw_mean=False):
+        if not self.call_qna:
+            raise Exception('There is no `question`, `answer` and `attention`. Call `qna` first')
+        question_token = to_tokens(self.question, self.tokenizer, to_ids=False)
+        question_token = ['<sos>']+question_token+['<eos>']
+
+        answer_token = to_tokens(self.answer, self.tokenizer, to_ids=False)
+        answer_token = answer_token+['<eos>']
+
+        attention = self.attention.squeeze(0)
+        if draw_mean:
+            attention = torch.mean(attention, dim=0, keepdim=True)
+        attention = attention.cpu().detach().numpy()
+
+        n_col = 4
+        n_row = (attention.shape[0]-1)//n_col + 1
+        fig = plt.figure(figsize = (n_col*6, n_row*6))
+        for i in range(attention.shape[0]):
+            plt.subplot(n_row, n_col, i+1)
+            plt.matshow(attention[i], fignum=False)
+            plt.xticks(range(len(question_token)), question_token, rotation=45)
+            plt.yticks(range(len(answer_token)), answer_token)
+        plt.show()
 
 
 def main(args):
@@ -72,13 +106,15 @@ def main(args):
 
     transformer = torch.load(MODEL_PATH+MODEL_NAME+'.pt')
 
+    chatbot = Chatbot(transformer, tokenizer, device)
+
     print('Start ChatBot\nEnter the message\n')
     print(f'To stop conversation, Enter "{STOP_SIGN}"\n')
     while True:
         question = input('You: ')
         if question == STOP_SIGN:
             break
-        answer, _ = qna(question, transformer, tokenizer, device)
+        answer, _ = chatbot.qna(question)
         print(f'ChatBot: {answer}')
 
 

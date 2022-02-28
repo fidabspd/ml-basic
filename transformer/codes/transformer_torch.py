@@ -122,7 +122,7 @@ class DecoderLayer(nn.Module):
         self_attn_outputs = self.dropout(self_attn_outputs)
         self_attn_outputs = self.self_attn_norm(target+self_attn_outputs)
 
-        encd_attn_outputs, attention = self.encd_attention(target, encd, encd, encd_mask)
+        encd_attn_outputs, attention = self.encd_attention(self_attn_outputs, encd, encd, encd_mask)
         encd_attn_outputs = self.dropout(encd_attn_outputs)
         encd_attn_outputs = self.encd_attn_norm(self_attn_outputs+encd_attn_outputs)
 
@@ -229,7 +229,7 @@ class Transformer(nn.Module):
             target_len = inputs.shape[1]
             target_sub_mask = torch.tril(torch.ones((target_len, target_len), device = self.device)).bool()
             mask = mask & target_sub_mask
-        return mask
+        return mask  # [batch_size, 1, 1, key_len]
 
     def forward(self, inp, tar):
         inp_mask = self.create_padding_mask(inp)

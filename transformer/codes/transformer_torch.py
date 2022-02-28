@@ -31,12 +31,14 @@ class MultiHeadAttentionLayer(nn.Module):
 
     def scaled_dot_product_attention(self, query, key, value, mask):
         key_t = key.permute(0, 1, 3, 2)
-        energy = torch.matmul(query, key_t) / self.scale
+        energy = torch.matmul(query, key_t) / self.scale  # [batch_size, n_heads, query_len, key_len]
         if mask is not None:
-            energy = energy.masked_fill(mask==0, -1e10)
+            energy = energy.masked_fill(mask==0, -1e10)  # key에 masking
         attention = torch.softmax(energy, axis=-1)  # axis=-1 은 key의 문장 위치
         attention = self.dropout(attention)
-        x = torch.matmul(attention, value)
+        # attention shape: [batch_size, n_heads, query_len, key_len(=val_len)]
+        # value shape: [batch_size, n_heads, val_len(=key_len), head_dim]
+        x = torch.matmul(attention, value)  # [batch_size, n_heads, query_len, head_dim]
         return x, attention  # attention 시각화에 쓸 수 있음
 
     def forward(self, query, key, value, mask=None):
@@ -52,12 +54,12 @@ class MultiHeadAttentionLayer(nn.Module):
         value = self.split_heads(value, batch_size)
 
         x, attention = self.scaled_dot_product_attention(query, key, value, mask)
-        x = x.permute(0, 2, 1, 3).contiguous()  # [batch_size, seq_len, n_heads, head_dim]
-        x = x.view(batch_size, -1, self.hidden_dim)  # [batch_size, seq_len, hidden_dim]
+        x = x.permute(0, 2, 1, 3).contiguous()  # [batch_size, query_len, n_heads, head_dim]
+        x = x.view(batch_size, -1, self.hidden_dim)  # [batch_size, query_len, hidden_dim]
 
         outputs = self.fc_o(x)
         
-        return outputs, attention
+        return outputs, attention  # [batch_size, query_len, hidden_dim]
 
 
 class PositionwiseFeedforwardLayer(nn.Module):
@@ -100,7 +102,7 @@ class EncoderLayer(nn.Module):
         ff_outputs = self.dropout(ff_outputs)
         ff_outputs = self.pos_ff_norm(attn_outputs+ff_outputs)  # residual connection
 
-        return ff_outputs
+        return ff_outputs  # [batch_size, query_len(inp), hidden_dim]
 
 
 class DecoderLayer(nn.Module):
@@ -121,7 +123,10 @@ class DecoderLayer(nn.Module):
         self_attn_outputs, _ = self.self_attention(target, target, target, target_mask)
         self_attn_outputs = self.dropout(self_attn_outputs)
         self_attn_outputs = self.self_attn_norm(target+self_attn_outputs)
-
+        
+        # self_attn_outputs shape: [batch_size, query_len(tar), hidden_dim]
+        # encd shape: [batch_size, query_len(inp), hidden_dim]
+        # new_query_len = query_len(tar); new_key_len(=new_val_len) = query_len(inp)
         encd_attn_outputs, attention = self.encd_attention(self_attn_outputs, encd, encd, encd_mask)
         encd_attn_outputs = self.dropout(encd_attn_outputs)
         encd_attn_outputs = self.encd_attn_norm(self_attn_outputs+encd_attn_outputs)
@@ -130,14 +135,14 @@ class DecoderLayer(nn.Module):
         outputs = self.dropout(outputs)
         outputs = self.pos_ff_norm(encd_attn_outputs+outputs)
 
-        return outputs, attention
+        return outputs, attention  # [batch_size, query_len(tar), hidden_dim]
 
 
 class Encoder(nn.Module):
 
     def __init__(self, input_dim, hidden_dim, n_layers, n_heads, pf_dim,
                  dropout_ratio, device, max_seq_len=100):
-        # input_dim = len(vocab)
+        # input_dim = encoder vocab_size
         super().__init__()
         self.device = device
         self.scale = torch.sqrt(torch.FloatTensor([hidden_dim])).to(device)
@@ -171,6 +176,7 @@ class Decoder(nn.Module):
     
     def __init__(self, output_dim, hidden_dim, n_layers, n_heads, pf_dim,
                  dropout_ratio, device, max_seq_len=100):
+        # output_dim = decoder vocab_size
         super().__init__()
         self.device = device
         self.scale = torch.sqrt(torch.FloatTensor([hidden_dim])).to(device)
@@ -199,7 +205,7 @@ class Decoder(nn.Module):
         for layer in self.decd_stk:
             outputs, attention = layer(outputs, encd, target_mask, encd_mask)
 
-        outputs = self.fc_out(outputs)
+        outputs = self.fc_out(outputs)  # [batch_size, query_len(tar), decoder vocab_size]
 
         return outputs, attention
         
@@ -237,5 +243,6 @@ class Transformer(nn.Module):
 
         enc_inp = self.encoder(inp, inp_mask)
         output, attention = self.decoder(tar, enc_inp, tar_mask, inp_mask)
+        # output shape: [batch_size, query_len(tar), decoder vocab_size]
 
         return output, attention

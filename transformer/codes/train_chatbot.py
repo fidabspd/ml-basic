@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument('--tokenizer_name', type=str, default='tokenizer')
     parser.add_argument('--model_path', type=str, default='../model/')
     parser.add_argument('--model_name', type=str, default='chatbot')
+    parser.add_argument('--train_log_path', type=str, default='../logs/train_logs/')
 
     parser.add_argument('--que_max_seq_len', type=int, default=50)
     parser.add_argument('--ans_max_seq_len', type=int, default=50)
@@ -121,8 +122,10 @@ def epoch_time(start_time, end_time):
     return elapsed_mins, elapsed_secs
 
 
-def train(model, n_epochs, es_patience, train_dl, valid_dl,
-          optimizer, criterion, clip, device, model_path, model_name='chatbot'):
+def train(model, n_epochs, es_patience, train_dl, valid_dl, optimizer,
+          criterion, clip, device, model_path, train_log_path, model_name='chatbot'):
+    if train_log_path is not None:
+        writer = SummaryWriter(train_log_path)
     best_valid_loss = float('inf')
     best_epoch = 0
 
@@ -130,8 +133,12 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl,
         start_time = time.time()
         
         train_loss = train_one_epoch(model, train_dl, optimizer, criterion, clip, device)
+        if train_log_path is not None:
+            writer.add_scalar('train loss', train_loss, epoch)
         if valid_dl is not None:
             valid_loss = evaluate(model, valid_dl, criterion, device)
+            if train_log_path is not None:
+                writer.add_scalar('valid loss', valid_loss, epoch)
 
         end_time = time.time()
         epoch_mins, epoch_secs = epoch_time(start_time, end_time)
@@ -154,6 +161,8 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl,
                 print(f'\tBest Validation Loss: {valid_loss:.3f} | Best Validation PPL: {math.exp(valid_loss):.3f}')
                 break
     
+    if train_log_path is not None:
+        writer.close()
     if valid_dl is None:
         torch.save(model, model_path+model_name+'.pt')
 
@@ -167,6 +176,7 @@ def main(args):
     TOKENIZER_NAME = args.tokenizer_name
     MODEL_PATH = args.model_path
     MODEL_NAME = args.model_name
+    TRAIN_LOG_PATH = args.train_log_path
 
     QUE_MAX_SEQ_LEN = args.que_max_seq_len
     ANS_MAX_SEQ_LEN = args.ans_max_seq_len
@@ -266,7 +276,7 @@ def main(args):
         valid_dl = None
     train(
         transformer, N_EPOCHS, ES_PATIENCE, train_dl, valid_dl,
-        optimizer, criterion, CLIP, device, MODEL_PATH, MODEL_NAME
+        optimizer, criterion, CLIP, device, MODEL_PATH, TRAIN_LOG_PATH, MODEL_NAME
     )
 
     if VALIDATE:

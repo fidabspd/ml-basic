@@ -9,9 +9,7 @@ def parse_args():
     desc = "SET CONFIGS"
     parser = argparse.ArgumentParser(description=desc)
 
-    parser.add_argument('--ans_seq_len', type=str, help='Enter the answer sequence length.', default=50)
     parser.add_argument('--stop_sign', type=str, help='Stop sign to stop conversation.', default='q')
-
     parser.add_argument('--model_path', type=str, default='../model/')
     parser.add_argument('--model_name', type=str, default='chatbot')
     parser.add_argument('--tokenizer_path', type=str, default='../model/')
@@ -100,6 +98,7 @@ def main(args):
     TOKENIZER_NAME = args.tokenizer_name
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f'Using device {device}')
 
     with open(TOKENIZER_PATH+TOKENIZER_NAME+'.pickle', 'rb') as f:
         tokenizer = pickle.load(f)

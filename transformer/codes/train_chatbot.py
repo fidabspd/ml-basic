@@ -19,7 +19,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=desc)
 
     parser.add_argument('--data_path', type=str, default='../data/')
-    parser.add_argument('--file_name', type=str, default='ChatBotData')
+    parser.add_argument('--file_name', type=str, default='ChatbotData')
     parser.add_argument('--graph_log_path', type=str, default='../logs/graph/')
     parser.add_argument('--tokenizer_path', type=str, default='../model/')
     parser.add_argument('--tokenizer_name', type=str, default='tokenizer')
@@ -68,13 +68,24 @@ def initialize_weights(m):
         nn.init.xavier_uniform_(m.weight.data)
 
 
-def train_one_epoch(model, dl, optimizer, criterion, clip, device):
-    model.train()
-    epoch_loss = 0
-    for inp, tar in dl:
-        inp, tar = inp.to(device), tar.to(device)
+def train_one_epoch(model, dl, optimizer, criterion, clip, device, n_check=5):
 
-        optimizer.zero_grad()
+    n_data = len(dl.dataset)
+    n_batch = len(dl)
+    batch_size = dl.batch_size
+    if n_check < 0:
+        print('n_check must be larger than 0. Adjust `n_check = 0`')
+        n_check = 0
+    if n_batch < n_check:
+        print(f'n_check should be smaller than n_batch. Adjust `n_check = {n_batch}`')
+        n_check = n_batch
+    if n_check:
+        check = [int(n_batch/n_check*(i+1)) for i in range(n_check)]
+    train_loss = 0
+
+    model.train()
+    for b, (inp, tar) in enumerate(dl):
+        inp, tar = inp.to(device), tar.to(device)
 
         outputs, _ = model(inp, tar[:,:-1])
         # decoder의 input 마지막 padding 제거, len 1 줄임.
@@ -87,20 +98,22 @@ def train_one_epoch(model, dl, optimizer, criterion, clip, device):
         # [안녕, <eos>, <pad>, <pad>, <pad>, <pad>]의 예측값을 만들어내야한다.
 
         output_dim = outputs.shape[-1]
-
         outputs = outputs.contiguous().view(-1, output_dim)
         tar = tar[:,1:].contiguous().view(-1)  # loss 계산할 정답으로 쓰일 `tar`는 <sos> 토큰 제거
-
         loss = criterion(outputs, tar)
+        train_loss += loss.item()/n_data
+
+        optimizer.zero_grad()
         loss.backward()
-
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
-
         optimizer.step()
 
-        epoch_loss += loss.item()
+        if n_check and b+1 in check:
+            n_data_check = b*batch_size + len(inp)
+            train_loss_check = train_loss*n_data/n_data_check
+            print(f'loss: {train_loss_check:>10f}  [{n_data_check:>5d}/{n_data:>5d}]')
 
-    return epoch_loss / len(dl)
+    return train_loss
 
 
 def evaluate(model, dl, criterion, device):
@@ -139,7 +152,8 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl, optimizer,
 
     for epoch in range(n_epochs):
         start_time = time.time()
-        
+
+        print('-'*30, f'\nEpoch: {epoch+1:02}', sep='')
         train_loss = train_one_epoch(model, train_dl, optimizer, criterion, clip, device)
         if train_log_path is not None:
             writer.add_scalar('train loss', train_loss, epoch)
@@ -158,15 +172,14 @@ def train(model, n_epochs, es_patience, train_dl, valid_dl, optimizer,
                 best_valid_loss = valid_loss
                 torch.save(model, model_path+model_name+'.pt')
 
-        print(f'Epoch: {epoch + 1:02} | Time: {epoch_mins}m {epoch_secs}s')
-        print(f'\tTrain Loss: {train_loss:.3f} | Train PPL: {math.exp(train_loss):.3f}')
+        print(f'Train Loss: {train_loss:.3f}\nEpoch Time: {epoch_mins}m {epoch_secs}s')
         if valid_dl is not None:
-            print(f'\tValidation Loss: {valid_loss:.3f} | Validation PPL: {math.exp(valid_loss):.3f}')
+            print(f'Validation Loss: {valid_loss:.3f}')
 
             if epoch-best_epoch >= es_patience:
-                print(f'Best Epoch: {best_epoch + 1:02}')
-                print(f'\tBest Train Loss: {train_loss:.3f} | Best Train PPL: {math.exp(train_loss):.3f}')
-                print(f'\tBest Validation Loss: {valid_loss:.3f} | Best Validation PPL: {math.exp(valid_loss):.3f}')
+                print(f'\nBest Epoch: {best_epoch+1:02}')
+                print(f'\tBest Train Loss: {train_loss:.3f}')
+                print(f'\tBest Validation Loss: {valid_loss:.3f}')
                 break
     
     if train_log_path is not None:
@@ -278,7 +291,7 @@ def main(args):
 
     # Train model
     optimizer = torch.optim.Adam(transformer.parameters(), lr=LEARNING_RATE)
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=PAD_IDX)
+    criterion = torch.nn.CrossEntropyLoss(reduction='sum', ignore_index=PAD_IDX)
 
     if not VALIDATE:
         valid_dl = None
